@@ -1,0 +1,19 @@
+# VERSION: 1.0.0
+
+services:
+  chess-app:
+    build: .
+    container_name: open-chess
+    ports:
+      - "3777:3000"
+    environment:
+      - PORT=3000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - "hyperspace"
+
+networks:
+  hyperspace:
+    external: true

@@ -1,0 +1,13 @@
+{
+    "name": "node-chess-socket",
+    "version": "1.0.0",
+    "description": "Multiplayer Chess with Socket.io",
+    "main": "server.js",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "socket.io": "^4.7.2"
+    }
+}

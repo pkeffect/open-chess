@@ -1,0 +1,228 @@
+<!-- VERSION: 5.1.0 -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marble Chess Board</title>
+    <!-- Update CSS Path -->
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Socket.io is served automatically by the server at this root path -->
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+
+    <div id="game-container">
+
+        <!-- LEFT COLUMN (History + FEN) -->
+        <div id="left-column">
+            <h3 style="margin: 0; color: #ccc;">Move History</h3>
+            <div id="history-panel">
+                <div style="color: #666; font-style: italic;">Moves will appear here...</div>
+            </div>
+            <button id="btn-copy-fen" class="side-btn">Copy FEN String</button>
+            <button id="btn-flip-board" class="side-btn">Flip Board</button>
+            <button id="btn-readme" class="side-btn" style="background-color: #3F51B5; color: white;">Help /
+                About</button>
+        </div>
+
+        <!-- CENTER COLUMN (Board) -->
+        <div id="center-column">
+            <div id="graveyard-top" class="graveyard black-marble"></div>
+            <div id="board-frame">
+                <div id="chessboard"></div>
+            </div>
+            <div id="graveyard-bottom" class="graveyard white-marble"></div>
+        </div>
+
+        <!-- RIGHT COLUMN (Controls) -->
+        <div id="sidebar">
+            <h1 id="status-text">Not Started</h1>
+            <div id="winner-display"></div>
+
+            <div class="timers-container">
+                <div id="timer-black" class="timer">10:00</div>
+                <div id="timer-white" class="timer">10:00</div>
+            </div>
+
+            <div class="controls">
+
+                <div class="settings-group">
+                    <h3>Opponent</h3>
+                    <div class="mode-toggle">
+                        <input type="radio" name="opponent" id="vs-human" checked>
+                        <label for="vs-human">Local</label>
+                    </div>
+                    <div class="mode-toggle">
+                        <input type="radio" name="opponent" id="vs-cpu">
+                        <label for="vs-cpu">CPU</label>
+                    </div>
+
+                    <div id="cpu-settings"
+                        style="margin-left: 20px; margin-bottom: 5px; display: flex; align-items: center; gap: 5px;">
+                        <label for="cpu-difficulty" style="font-size: 12px; color: #aaa;">Level:</label>
+                        <select id="cpu-difficulty"
+                            style="background: #222; color: white; border: 1px solid #444; padding: 2px; font-size: 12px;">
+                            <option value="easy">Easy (Greedy)</option>
+                            <option value="normal">Normal (Depth 2)</option>
+                            <option value="hard" selected>Hard (Depth 3)</option>
+                            <option value="expert">Expert (Depth 4)</option>
+                        </select>
+                    </div>
+
+                    <div class="mode-toggle">
+                        <input type="radio" name="opponent" id="vs-llm">
+                        <label for="vs-llm">LLM</label>
+                    </div>
+                    <div class="mode-toggle">
+                        <input type="radio" name="opponent" id="vs-p2p">
+                        <label for="vs-p2p" style="color:#4CAF50;">Online</label>
+                    </div>
+                </div>
+
+                <!-- SOCKET UI -->
+                <div id="p2p-panel"
+                    style="display: none; background: #222; padding: 10px; border-radius: 4px; border: 1px solid #444; flex-direction: column; gap: 10px;">
+
+                    <!-- Mode Select -->
+                    <div id="net-step-1" style="display: flex; gap: 5px;">
+                        <button id="net-create-btn" class="btn primary" style="font-size:12px; flex:1;">Create
+                            Room</button>
+                        <button id="net-join-mode-btn" class="btn warning" style="font-size:12px; flex:1;">Join
+                            Room</button>
+                    </div>
+
+                    <!-- Join Input -->
+                    <div id="net-step-2" style="display: none; flex-direction: column; gap: 8px;">
+                        <input id="net-room-input" type="text" placeholder="Enter Room ID"
+                            style="background:#111; color:white; border:1px solid #444; padding:5px; text-transform: uppercase;">
+                        <button id="net-join-btn" class="btn primary" style="font-size:12px;">Connect</button>
+                    </div>
+
+                    <!-- Created Info -->
+                    <div id="net-step-3" style="display: none; flex-direction: column; gap: 8px; text-align: center;">
+                        <span style="color: #ccc; font-size: 12px;">Room ID:</span>
+                        <div id="display-room-id" style="font-size: 24px; color: #ffd700; font-family: monospace;">
+                        </div>
+                        <span style="color: #888; font-size: 11px;">Waiting for opponent...</span>
+                    </div>
+
+                    <div id="net-status" style="font-size: 11px; color: #aaa; text-align: center;">Disconnected</div>
+                </div>
+
+                <!-- LLM Settings -->
+                <div id="llm-settings" style="display: none; flex-direction: column; gap: 5px; margin-bottom: 10px;">
+                    <input type="text" id="llm-url" value="http://localhost:3000/api/chat/completions"
+                        style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                    <div style="display: flex; gap: 5px; max-width: 100%;">
+                        <select id="llm-model"
+                            style="flex: 1; min-width: 0; padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                            <option value="llama3:latest">llama3:latest</option>
+                        </select>
+                        <button id="refresh-models-btn"
+                            style="cursor: pointer; background: #333; color: white; border: 1px solid #444; padding: 0 8px;">↻</button>
+                    </div>
+                    <input type="password" id="llm-key" placeholder="Bearer Token" autocomplete="new-password"
+                        style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                </div>
+
+                <hr style="width: 100%; border-color: #444;">
+
+                <button id="start-btn" class="btn primary">Start Game</button>
+                <div style="display: flex; gap: 10px;">
+                    <button id="draw-btn" class="btn" style="background-color: #FF9800; color: white; flex: 1;"
+                        disabled>Draw</button>
+                    <button id="resign-btn" class="btn warning" style="flex: 1;" disabled>Resign</button>
+                </div>
+
+                <div id="loading-indicator" style="display: none; color: #ffd700; font-size: 14px; margin-top: 5px;">
+                    Thinking...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- RESTORE MODAL -->
+    <div id="restore-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="color: #ffd700; margin-top: 0;">Game Found</h2>
+            <p style="color: #ccc;">Resume previous game?</p>
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+                <button id="restore-yes" class="btn primary">Resume</button>
+                <button id="restore-no" class="btn warning">Discard</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROMOTION MODAL -->
+    <div id="promotion-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="color: #ffd700; margin-top: 0;">Pawn Promotion</h2>
+            <p style="color: #ccc;">Choose a piece:</p>
+            <div class="promotion-options" id="promotion-options">
+                <!-- Dynamically populated by UI -->
+            </div>
+        </div>
+    </div>
+
+    <!-- DRAW OFFER MODAL -->
+    <div id="draw-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 style="color: #FF9800; margin-top: 0;">Draw Offered</h2>
+            <p style="color: #ccc;">Opponent offers a draw.</p>
+            <div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+                <button id="draw-accept" class="btn primary">Accept</button>
+                <button id="draw-decline" class="btn warning">Decline</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- README / HELP MODAL -->
+    <div id="readme-modal" class="modal-overlay">
+        <div class="readme-content">
+            <span class="readme-close">&times;</span>
+            <h2>Node.js Marble Chess</h2>
+            <p>A feature-rich, containerized Chess application built with Node.js, Socket.io, and Vanilla JavaScript.
+            </p>
+
+            <h3>🎮 Game Modes</h3>
+            <ul>
+                <li><strong>Local:</strong> Play against a friend on the same device.</li>
+                <li><strong>CPU:</strong> Minimax AI with 4 difficulty levels.</li>
+                <li><strong>LLM:</strong> Play against AI models (Ollama/OpenAI) via API.</li>
+                <li><strong>Online (P2P):</strong> Real-time multiplayer with disconnect handling.</li>
+            </ul>
+
+            <h3>♟️ Gameplay Features</h3>
+            <ul>
+                <li><strong>Drag & Drop:</strong> Works on Mouse and Touch screens.</li>
+                <li><strong>Rules:</strong> Castling, En Passant, Promotion, 50-move rule.</li>
+                <li><strong>History:</strong> PGN Move logging and FEN export.</li>
+                <li><strong>Draws:</strong> Offer draws in online play.</li>
+            </ul>
+
+            <h3>💡 Tips</h3>
+            <ul>
+                <li>Use <code>Flip Board</code> to see from Black's perspective.</li>
+                <li>In Online mode, share the <strong>Room ID</strong> with a friend.</li>
+                <li>If an opponent disconnects, a 30s timer will start before auto-win.</li>
+            </ul>
+
+            <p style="margin-top: 30px; text-align: center; color: #888; font-size: 12px;">Version 5.1.0</p>
+        </div>
+    </div>
+
+    <!-- UPDATED SCRIPTS PATHS -->
+    <script src="js/clock.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/opponent.js"></script>
+    <script src="js/llm-player.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/main.js"></script>
+</body>
+
+</html>
