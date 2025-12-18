@@ -128,4 +128,3 @@ The application will launch at `http://localhost:3000`.
 ## 📝 License
 
 This project is open-source. Feel free to modify and distribute.
-```
