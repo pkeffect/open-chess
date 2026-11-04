@@ -1,6 +1,7 @@
-// VERSION: 5.2.0
+// VERSION: 5.3.0
 class ChessClock {
-    constructor(minutes, onTimeOutCallback) {
+    constructor(minutes, onTimeOutCallback, unlimited = false) {
+        this.unlimited = !!unlimited;
         this.initialSeconds = minutes * 60;
         this.whiteTime = this.initialSeconds;
         this.blackTime = this.initialSeconds;
@@ -8,6 +9,12 @@ class ChessClock {
         this.intervalId = null;
         this.lastTimestamp = null;
         this.onTimeOut = onTimeOutCallback;
+    }
+
+    /** Change the base time (e.g. when the user edits the time control). */
+    setMinutes(minutes, unlimited = this.unlimited) {
+        this.unlimited = !!unlimited;
+        this.initialSeconds = minutes * 60;
     }
 
     start(color) {
@@ -20,7 +27,9 @@ class ChessClock {
         this.activeColor = color;
         this.lastTimestamp = Date.now();
 
-        // We tick frequently (100ms) to keep the UI smooth, but the math relies on timestamps, 
+        if (this.unlimited) return; // nothing to count down
+
+        // We tick frequently (100ms) to keep the UI smooth, but the math relies on timestamps,
         // not the interval count, so lag doesn't affect accuracy.
         this.intervalId = setInterval(() => {
             this.tick();
@@ -40,6 +49,7 @@ class ChessClock {
     }
 
     tick() {
+        if (this.unlimited) return;
         if (!this.activeColor || !this.lastTimestamp) return;
 
         const now = Date.now();
@@ -70,12 +80,13 @@ class ChessClock {
 
     reset() {
         this.stop();
-        this.whiteTime = this.initialSeconds;
-        this.blackTime = this.initialSeconds;
+        this.whiteTime = this.unlimited ? 0 : this.initialSeconds;
+        this.blackTime = this.unlimited ? 0 : this.initialSeconds;
     }
 
-    // Helper to return "10:00" string
+    // Helper to return "10:00" string (or ∞ without a time control)
     getTimeString(color) {
+        if (this.unlimited) return '∞';
         // Math.ceil so it shows "0:01" until strictly 0
         const totalSecondsRaw = (color === 'white') ? this.whiteTime : this.blackTime;
         const totalSeconds = Math.ceil(Math.max(0, totalSecondsRaw));

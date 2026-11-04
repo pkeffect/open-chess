@@ -1,4 +1,4 @@
-// VERSION: 5.2.0
+// VERSION: 5.5.0
 class ChessUI {
     constructor() {
         // Board
@@ -26,12 +26,19 @@ class ChessUI {
         this.radioHuman = document.getElementById('vs-human');
         this.radioCpu = document.getElementById('vs-cpu');
         this.radioLlm = document.getElementById('vs-llm');
+        this.radioHermes = document.getElementById('vs-hermes');
         this.radioP2P = document.getElementById('vs-p2p');
 
         this.cpuDifficultySelect = document.getElementById('cpu-difficulty');
         this.cpuSettingsDiv = document.getElementById('cpu-settings');
 
+        // Time control
+        this.timePresetSelect = document.getElementById('time-preset');
+        this.timeCustomInput = document.getElementById('time-custom');
+        this.timeCustomUnit = document.getElementById('time-custom-unit');
+
         this.llmSettingsDiv = document.getElementById('llm-settings');
+        this.hermesSettingsDiv = document.getElementById('hermes-settings');
         this.p2pPanel = document.getElementById('p2p-panel');
 
         // Inputs
@@ -39,6 +46,18 @@ class ChessUI {
         this.llmModelSelect = document.getElementById('llm-model');
         this.llmKeyInput = document.getElementById('llm-key');
         this.refreshModelsBtn = document.getElementById('refresh-models-btn');
+
+        // Hermes inputs
+        this.hermesUrlInput = document.getElementById('hermes-url');
+        this.hermesUserInput = document.getElementById('hermes-user');
+        this.hermesKeyInput = document.getElementById('hermes-key');
+        this.hermesTimeoutSelect = document.getElementById('hermes-timeout');
+        this.hermesStatus = document.getElementById('hermes-status');
+        this.hermesResetBtn = document.getElementById('hermes-reset-btn');
+        this.hermesChatLog = document.getElementById('hermes-chat-log');
+        this.hermesChatInput = document.getElementById('hermes-chat-input');
+        this.hermesChatSendBtn = document.getElementById('hermes-chat-send');
+        this.hermesChatPanel = document.getElementById('hermes-chat');
 
         // P2P UI
         this.netCreateBtn = document.getElementById('net-create-btn');
@@ -167,7 +186,7 @@ class ChessUI {
     }
 
     bindOpponentChange(handler) {
-        [this.radioHuman, this.radioCpu, this.radioLlm, this.radioP2P].forEach(r => {
+        [this.radioHuman, this.radioCpu, this.radioLlm, this.radioHermes, this.radioP2P].forEach(r => {
             if (r) r.addEventListener('change', handler);
         });
     }
@@ -176,6 +195,81 @@ class ChessUI {
         if (this.llmKeyInput) this.llmKeyInput.addEventListener('input', handler);
         if (this.llmModelSelect) this.llmModelSelect.addEventListener('change', handler);
         if (this.cpuDifficultySelect) this.cpuDifficultySelect.addEventListener('change', handler);
+        if (this.hermesUserInput) this.hermesUserInput.addEventListener('input', handler);
+        if (this.hermesKeyInput) this.hermesKeyInput.addEventListener('input', handler);
+        if (this.hermesUrlInput) this.hermesUrlInput.addEventListener('input', handler);
+        if (this.hermesTimeoutSelect) this.hermesTimeoutSelect.addEventListener('change', handler);
+    }
+    bindHermesReset(handler) {
+        if (this.hermesResetBtn) this.hermesResetBtn.addEventListener('click', handler);
+    }
+    bindTimeControlChange(handler) {
+        if (this.timePresetSelect) this.timePresetSelect.addEventListener('change', () => {
+            this.updateTimeCustomVisibility();
+            handler();
+        });
+        if (this.timeCustomInput) this.timeCustomInput.addEventListener('input', handler);
+    }
+    updateTimeCustomVisibility() {
+        const isCustom = this.timePresetSelect && this.timePresetSelect.value === 'custom';
+        if (this.timeCustomInput) this.timeCustomInput.style.display = isCustom ? 'block' : 'none';
+        if (this.timeCustomUnit) this.timeCustomUnit.style.display = isCustom ? 'inline' : 'none';
+    }
+    /** {unlimited: bool, minutes: int} — minutes ignored when unlimited. */
+    getTimeControl() {
+        const preset = this.timePresetSelect ? this.timePresetSelect.value : '10';
+        if (preset === 'unlimited') return { unlimited: true, minutes: 0 };
+        if (preset === 'custom') {
+            const m = parseInt(this.timeCustomInput ? this.timeCustomInput.value : '', 10);
+            return { unlimited: false, minutes: (Number.isFinite(m) && m >= 1) ? Math.min(m, 180) : 10 };
+        }
+        return { unlimited: false, minutes: parseInt(preset, 10) || 10 };
+    }
+    setTimeControl(preset, customMin) {
+        if (this.timePresetSelect && preset && Array.from(this.timePresetSelect.options).some(o => o.value === preset)) {
+            this.timePresetSelect.value = preset;
+        }
+        if (customMin && this.timeCustomInput) this.timeCustomInput.value = String(customMin);
+        this.updateTimeCustomVisibility();
+    }
+    bindHermesChatSend(handler) {
+        if (this.hermesChatSendBtn) this.hermesChatSendBtn.addEventListener('click', handler);
+        if (this.hermesChatInput) {
+            this.hermesChatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') handler();
+            });
+        }
+    }
+    getHermesChatInput() {
+        return this.hermesChatInput ? this.hermesChatInput.value.trim() : '';
+    }
+    clearHermesChatInput() {
+        if (this.hermesChatInput) this.hermesChatInput.value = '';
+    }
+    setHermesChatBusy(isBusy) {
+        if (this.hermesChatSendBtn) {
+            this.hermesChatSendBtn.disabled = isBusy;
+            this.hermesChatSendBtn.innerText = isBusy ? '...' : 'Send';
+        }
+        if (this.hermesChatInput) this.hermesChatInput.disabled = isBusy;
+    }
+    addHermesChatMessage(sender, text, color) {
+        if (!this.hermesChatLog) return;
+        const placeholder = this.hermesChatLog.querySelector('div[style*="italic"]');
+        if (placeholder) placeholder.remove();
+        const row = document.createElement('div');
+        row.style.marginBottom = '4px';
+        const who = document.createElement('strong');
+        who.style.color = color || '#ccc';
+        who.innerText = sender + ': ';
+        row.appendChild(who);
+        row.appendChild(document.createTextNode(text));
+        this.hermesChatLog.appendChild(row);
+        this.hermesChatLog.scrollTop = this.hermesChatLog.scrollHeight;
+    }
+    setHermesChatThinking(isThinking) {
+        if (this.hermesChatInput) this.hermesChatInput.disabled = isThinking;
+        if (this.hermesChatSendBtn) this.hermesChatSendBtn.disabled = isThinking;
     }
     bindRefreshModels(handler) {
         if (this.refreshModelsBtn) this.refreshModelsBtn.addEventListener('click', handler);
@@ -609,10 +703,16 @@ class ChessUI {
 
     updateSettingsVisibility() {
         this.llmSettingsDiv.style.display = 'none';
+        this.hermesSettingsDiv.style.display = 'none';
         this.p2pPanel.style.display = 'none';
         this.cpuSettingsDiv.style.display = 'none';
+        if (this.hermesChatPanel) this.hermesChatPanel.style.display = 'none';
 
         if (this.radioLlm.checked) this.llmSettingsDiv.style.display = 'flex';
+        if (this.radioHermes.checked) {
+            this.hermesSettingsDiv.style.display = 'flex';
+            if (this.hermesChatPanel) this.hermesChatPanel.style.display = 'flex';
+        }
         if (this.radioP2P.checked) this.p2pPanel.style.display = 'flex';
         if (this.radioCpu.checked) this.cpuSettingsDiv.style.display = 'flex';
     }
@@ -620,6 +720,7 @@ class ChessUI {
     getOpponentMode() {
         if (this.radioCpu.checked) return 'cpu';
         if (this.radioLlm.checked) return 'llm';
+        if (this.radioHermes.checked) return 'hermes';
         if (this.radioP2P.checked) return 'p2p';
         return 'human';
     }
@@ -627,6 +728,7 @@ class ChessUI {
     setOpponentMode(mode) {
         if (mode === 'cpu') this.radioCpu.checked = true;
         else if (mode === 'llm') this.radioLlm.checked = true;
+        else if (mode === 'hermes') this.radioHermes.checked = true;
         else if (mode === 'p2p') this.radioP2P.checked = true;
         else this.radioHuman.checked = true;
         this.updateSettingsVisibility();
@@ -672,6 +774,41 @@ class ChessUI {
     setLLMConfig(url, key, model) {
         if (url) this.llmUrlInput.value = url;
         if (key) this.llmKeyInput.value = key;
+    }
+
+    // --- HERMES AGENT CONFIG ---
+
+    getHermesConfig() {
+        return {
+            gatewayUrl: this.hermesUrlInput ? this.hermesUrlInput.value.trim() : '',
+            username: this.hermesUserInput ? this.hermesUserInput.value : '',
+            password: this.hermesKeyInput ? this.hermesKeyInput.value : '',
+            moveTimeoutMs: this.hermesTimeoutSelect ? parseInt(this.hermesTimeoutSelect.value, 10) : 120000,
+            onStatus: (msg) => this.updateHermesStatus(msg)
+        };
+    }
+
+    setHermesConfig(username, password, gatewayUrl, timeoutMs) {
+        if (username) this.hermesUserInput.value = username;
+        if (password) this.hermesKeyInput.value = password;
+        if (gatewayUrl) this.hermesUrlInput.value = gatewayUrl;
+        if (timeoutMs && this.hermesTimeoutSelect) {
+            const known = Array.from(this.hermesTimeoutSelect.options).some(o => o.value === String(timeoutMs));
+            if (known) this.hermesTimeoutSelect.value = String(timeoutMs);
+        }
+    }
+
+    updateHermesStatus(msg) {
+        if (!this.hermesStatus) return;
+        this.hermesStatus.innerText = msg;
+        const lower = (msg || '').toLowerCase();
+        if (lower.startsWith('error') || lower.startsWith('no valid') || lower.startsWith('login')) {
+            this.hermesStatus.style.color = '#f44336';
+        } else if (lower.includes('connected') && !lower.includes('dis') && !lower.includes('not')) {
+            this.hermesStatus.style.color = '#4CAF50';
+        } else {
+            this.hermesStatus.style.color = '#aaa';
+        }
     }
 
     showNetCreated(roomId) {

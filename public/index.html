@@ -1,4 +1,4 @@
-<!-- VERSION: 5.1.0 -->
+<!-- VERSION: 5.5.0 -->
 <!DOCTYPE html>
 <html lang="en">
 
@@ -26,6 +26,20 @@
             <button id="btn-flip-board" class="side-btn">Flip Board</button>
             <button id="btn-readme" class="side-btn" style="background-color: #3F51B5; color: white;">Help /
                 About</button>
+
+            <!-- Hermes Agent chat (only visible in Hermes Agent mode) -->
+            <div id="hermes-chat" style="display: none; flex-direction: column; gap: 6px; margin-top: 12px; width: 100%;">
+                <h3 style="margin: 0; color: #ccc;">Chat with Hermes</h3>
+                <div id="hermes-chat-log"
+                    style="height: 200px; overflow-y: auto; background: #111; border: 1px solid #444; border-radius: 4px; padding: 8px; font-size: 12px; color: #ccc; line-height: 1.55;">
+                    <div style="color:#666; font-style: italic;">Talk to your opponent about the game...</div>
+                </div>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="hermes-chat-input" placeholder="Say something to Hermes..."
+                        maxlength="500" style="flex: 1; min-width: 0; padding: 6px; background: #222; border: 1px solid #444; color: white; font-size: 12px;">
+                    <button id="hermes-chat-send" class="btn primary" style="font-size: 12px; padding: 5px 10px;">Send</button>
+                </div>
+            </div>
         </div>
 
         <!-- CENTER COLUMN (Board) -->
@@ -48,6 +62,25 @@
             </div>
 
             <div class="controls">
+
+                <div class="settings-group" id="time-control-group" style="width: 100%;">
+                    <h3>Time Control</h3>
+                    <div style="display: flex; gap: 5px; align-items: center;">
+                        <select id="time-preset"
+                            style="flex: 1; background: #222; color: white; border: 1px solid #444; padding: 4px; font-size: 12px;">
+                            <option value="unlimited">No limit (relaxed)</option>
+                            <option value="5">5 minutes</option>
+                            <option value="10" selected>10 minutes</option>
+                            <option value="15">15 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="custom">Custom…</option>
+                        </select>
+                        <input type="number" id="time-custom" min="1" max="180" placeholder="min"
+                            style="display: none; width: 70px; background: #222; color: white; border: 1px solid #444; padding: 4px; font-size: 12px;">
+                        <span id="time-custom-unit" style="display: none; font-size: 11px; color: #aaa;">min</span>
+                    </div>
+                    <div id="time-hint" style="font-size: 10px; color: #666;">Applies when you press Start Game.</div>
+                </div>
 
                 <div class="settings-group">
                     <h3>Opponent</h3>
@@ -75,6 +108,10 @@
                     <div class="mode-toggle">
                         <input type="radio" name="opponent" id="vs-llm">
                         <label for="vs-llm">LLM</label>
+                    </div>
+                    <div class="mode-toggle">
+                        <input type="radio" name="opponent" id="vs-hermes">
+                        <label for="vs-hermes" style="color:#00BCD4;">Hermes Agent</label>
                     </div>
                     <div class="mode-toggle">
                         <input type="radio" name="opponent" id="vs-p2p">
@@ -126,6 +163,33 @@
                     </div>
                     <input type="password" id="llm-key" placeholder="Bearer Token" autocomplete="new-password"
                         style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                </div>
+
+                <!-- Hermes Agent Settings -->
+                <div id="hermes-settings" style="display: none; flex-direction: column; gap: 5px; margin-bottom: 10px;">
+                    <input type="text" id="hermes-user" placeholder="Gateway username" autocomplete="username"
+                        style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                    <input type="password" id="hermes-key" placeholder="Gateway password" autocomplete="new-password"
+                        style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                    <input type="text" id="hermes-url" placeholder="http://192.168.1.10:9119"
+                        title="Address of your Hermes Gateway (hermes serve), including the port"
+                        autocomplete="url" style="padding: 5px; background: #222; border: 1px solid #444; color: white;">
+                    <div style="font-size: 10px; color: #777; line-height: 1.4;">
+                        Address of your <strong>Hermes Gateway</strong> (<code>hermes serve</code>), including the
+                        port. Open Chess registers it with its own server automatically — just paste it here.
+                    </div>
+                    <div style="display: flex; gap: 5px; align-items: center;">
+                        <label for="hermes-timeout" style="font-size: 12px; color: #aaa;">Move timeout:</label>
+                        <select id="hermes-timeout"
+                            style="flex: 1; background: #222; color: white; border: 1px solid #444; padding: 2px; font-size: 12px;">
+                            <option value="60000">60 s</option>
+                            <option value="120000" selected>120 s</option>
+                            <option value="180000">180 s</option>
+                        </select>
+                    </div>
+                    <button id="hermes-reset-btn" class="btn" style="font-size: 11px; padding: 4px;">Reset agent memory
+                        (new session)</button>
+                    <div id="hermes-status" style="font-size: 11px; color: #aaa; text-align: center;">Not connected</div>
                 </div>
 
                 <hr style="width: 100%; border-color: #444;">
@@ -192,6 +256,10 @@
                 <li><strong>Local:</strong> Play against a friend on the same device.</li>
                 <li><strong>CPU:</strong> Minimax AI with 4 difficulty levels.</li>
                 <li><strong>LLM:</strong> Play against AI models (Ollama/OpenAI) via API.</li>
+                <li><strong>Hermes Agent:</strong> Play against a self-hosted <a
+                        href="https://hermes-agent.nousresearch.com" target="_blank" rel="noopener">Hermes</a> agent
+                    (full agent with tools &amp; memory — it remembers your games). Requires the server-side gateway
+                    proxy (<code>HERMES_GATEWAY_URL</code>).</li>
                 <li><strong>Online (P2P):</strong> Real-time multiplayer with disconnect handling.</li>
             </ul>
 
@@ -210,7 +278,7 @@
                 <li>If an opponent disconnects, a 30s timer will start before auto-win.</li>
             </ul>
 
-            <p style="margin-top: 30px; text-align: center; color: #888; font-size: 12px;">Version 5.1.0</p>
+            <p style="margin-top: 30px; text-align: center; color: #888; font-size: 12px;">Version 5.5.0</p>
         </div>
     </div>
 
@@ -219,6 +287,7 @@
     <script src="js/game.js"></script>
     <script src="js/opponent.js"></script>
     <script src="js/llm-player.js"></script>
+    <script src="js/hermes-player.js"></script>
     <script src="js/network.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/storage.js"></script>

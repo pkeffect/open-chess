@@ -1,4 +1,4 @@
-// VERSION: 4.1.0
+// VERSION: 4.4.0
 const express = require('express');
 const http = require('http');
 const fs = require('fs');
@@ -8,9 +8,55 @@ const { Server } = require('socket.io');
 // IMPORT SHARED LOGIC
 const ChessGame = require('./public/js/game.js');
 
+// OPTIONAL: same-origin passthrough to a self-hosted Hermes Gateway.
+// Disabled unless HERMES_GATEWAY_URL is set (see hermes-gateway-proxy.js).
+const { attachHermesGatewayProxy } = require('./hermes-gateway-proxy');
+
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// destroyUpgrade: false — the Hermes gateway proxy below upgrades other paths
+// (see hermes-gateway-proxy.js). Without this, engine.io destroys any upgrade
+// that isn't socket.io's after 1s of silence, killing slow gateway handshakes.
+const io = new Server(server, { destroyUpgrade: false });
+
+// --- HERMES GATEWAY PROXY (optional) ---
+// The gateway URL is resolved once at startup:
+//   1. HERMES_GATEWAY_URL environment variable (locked: UI changes are not
+//      persisted), or
+//   2. the local hermes.config.json file, which is normally written
+//      automatically when a gateway URL is entered in the game UI — copy
+//      hermes.config.example.json only for headless/Docker pre-configuration.
+function resolveHermesGatewayUrl() {
+    if (process.env.HERMES_GATEWAY_URL) {
+        return { url: process.env.HERMES_GATEWAY_URL, source: 'HERMES_GATEWAY_URL env', locked: true };
+    }
+    const configPath = path.join(__dirname, 'hermes.config.json');
+    if (!fs.existsSync(configPath)) return { url: null, source: null, locked: false };
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (config.gatewayUrl) return { url: config.gatewayUrl, source: 'hermes.config.json', locked: false };
+        console.error('[ERROR] hermes.config.json has no "gatewayUrl" field');
+    } catch (e) {
+        console.error('[ERROR] hermes.config.json is not valid JSON:', e.message);
+    }
+    return { url: null, source: null, locked: false };
+}
+
+try {
+    const { url: hermesGatewayUrl, source: hermesSource, locked: hermesLocked } = resolveHermesGatewayUrl();
+    const hermesProxy = attachHermesGatewayProxy(server, app, {
+        gatewayUrl: hermesGatewayUrl,
+        lockedByEnv: hermesLocked,
+        configFile: path.join(__dirname, 'hermes.config.json')
+    });
+    if (hermesProxy && hermesGatewayUrl) {
+        console.log(`[OK] Hermes gateway proxy active (${hermesSource}): ${hermesProxy.prefix} -> ${hermesGatewayUrl}`);
+    } else {
+        console.log(`[--] Hermes gateway proxy waiting for a gateway URL (enter one in the game UI, Hermes Agent panel)`);
+    }
+} catch (e) {
+    console.error('[ERROR] Hermes gateway proxy could not start:', e.message);
+}
 
 // --- STARTUP CHECKS ---
 const requiredFiles = [
