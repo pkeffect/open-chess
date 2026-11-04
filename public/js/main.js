@@ -1,13 +1,25 @@
-// VERSION: 5.2.0
+// VERSION: 5.5.0
 document.addEventListener('DOMContentLoaded', () => {
 
     const ui = new ChessUI();
     const storage = new GameStorage();
     const game = new ChessGame();
 
+    // Applies the selected time control to the clock. Resets the clocks only
+    // when no game is running (mid-game changes apply on the next Start).
+    function applyTimeControl() {
+        const tc = ui.getTimeControl();
+        clock.setMinutes(tc.unlimited ? 0 : tc.minutes, tc.unlimited);
+        if (!isGameStarted || game.gameOver) {
+            clock.reset();
+            updateAll();
+        }
+    }
+
     // Sub-modules
     let basicAI;
     let llmAI;
+    let hermesAI;
     let netGame;
     let opponentMode = 'human';
     let isGameStarted = false;
@@ -23,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         storage.saveSession(game, clock, opponentMode);
         triggerSound('gameOver');
         updateAll();
+        if (opponentMode === 'hermes' && hermesAI) hermesAI.notifyGameOver(game);
     });
 
     // --- AUDIO HELPER ---
@@ -126,14 +139,37 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("For Online Play, use the connection panel above.");
             return;
         }
+        if (opponentMode === 'hermes') {
+            // Validate before touching the game state so a failed check
+            // cannot silently reset a running board.
+            const config = ui.getHermesConfig();
+            const probe = new HermesPlayer(config);
+            if (!probe.isConfigured()) {
+                ui.updateHermesStatus('Error: gateway URL / credentials missing');
+                alert("Please enter your Hermes Gateway URL (e.g. http://192.168.1.10:9119) and your gateway username/password before starting.");
+                return;
+            }
+        }
         game.initBoard();
         clock.reset();
         selectedSquare = null;
         storage.clearSession();
+        applyTimeControl(); // pick up edits made while a game was running
 
         if (opponentMode === 'llm') {
             const config = ui.getLLMConfig();
             llmAI = new LLMPlayer(config.url || 'http://localhost:3000/api/chat/completions', config.model, config.key);
+        }
+
+        if (opponentMode === 'hermes') {
+            const config = ui.getHermesConfig();
+            hermesAI = new HermesPlayer(config);
+            hermesAI.onAgentMessage = (msg) => ui.addHermesChatMessage('Hermes', msg, '#00BCD4');
+            if (hermesAI.sessionId) {
+                ui.updateHermesStatus('Existing agent session found');
+            } else {
+                ui.updateHermesStatus('New agent session will start');
+            }
         }
 
         isGameStarted = true;
@@ -147,8 +183,10 @@ document.addEventListener('DOMContentLoaded', () => {
     ui.bindResign(() => {
         if (isGameStarted && !game.gameOver) {
             let colorToResign = game.turn;
-            if (opponentMode === 'cpu' || opponentMode === 'llm') colorToResign = 'white';
+            if (opponentMode === 'cpu' || opponentMode === 'llm' || opponentMode === 'hermes') colorToResign = 'white';
             if (opponentMode === 'p2p') colorToResign = myNetColor;
+
+            if (opponentMode === 'hermes' && hermesAI) hermesAI.abort();
 
             game.resign(colorToResign);
             if (opponentMode === 'p2p' && netGame) netGame.sendResign();
@@ -156,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clock.stop();
             updateAll();
             ui.playSound('gameOver');
+            if (opponentMode === 'hermes' && hermesAI) hermesAI.notifyGameOver(game);
         }
     });
 
@@ -191,6 +230,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     ui.bindSettingsChange(() => {
+        storage.saveSettings(ui);
+    });
+
+    ui.bindHermesReset(() => {
+        if (hermesAI) hermesAI.resetSession();
+        ui.updateHermesStatus('Agent memory reset — new session on next move');
+    });
+
+    ui.bindHermesChatSend(async () => {
+        const text = ui.getHermesChatInput();
+        if (!text || !hermesAI || !hermesAI.sessionId) return;
+        ui.addHermesChatMessage('Du', text, '#ffd700');
+        ui.clearHermesChatInput();
+        ui.setHermesChatBusy(true);
+        try {
+            const reply = await hermesAI.sendChatMessage(text);
+            ui.addHermesChatMessage('Hermes', reply || '(no reply)', '#00BCD4');
+        } catch (e) {
+            ui.addHermesChatMessage('Hermes', e.message, '#f44336');
+        }
+        ui.setHermesChatBusy(false);
+    });
+
+    ui.bindTimeControlChange(() => {
+        applyTimeControl();
         storage.saveSettings(ui);
     });
 
@@ -244,6 +308,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const config = ui.getLLMConfig();
                 llmAI = new LLMPlayer(config.url, config.model, config.key);
             }
+            if (opponentMode === 'hermes') {
+                const config = ui.getHermesConfig();
+                hermesAI = new HermesPlayer(config);
+            }
 
             isGameStarted = true;
             ui.setGameActive(true);
@@ -251,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!game.gameOver) {
                 clock.start(game.turn);
-                if (game.turn === 'black' && (opponentMode === 'cpu' || opponentMode === 'llm')) {
+                if (game.turn === 'black' && (opponentMode === 'cpu' || opponentMode === 'llm' || opponentMode === 'hermes')) {
                     handleTurnSwitch();
                 }
             }
@@ -270,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (myNetColor === 'spectator') return;
 
         // Turn Block
-        if ((opponentMode === 'cpu' || opponentMode === 'llm') && game.turn === 'black') return;
+        if ((opponentMode === 'cpu' || opponentMode === 'llm' || opponentMode === 'hermes') && game.turn === 'black') return;
         if (opponentMode === 'p2p' && game.turn !== myNetColor) return;
 
         if (!selectedSquare) {
@@ -344,6 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (game.gameOver) {
             clock.stop();
             ui.updateStatus(game);
+            if (opponentMode === 'hermes' && hermesAI) hermesAI.notifyGameOver(game);
             return;
         }
 
@@ -369,6 +438,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ui.setBoardLocked(true);
                 ui.setLoading(true);
                 setTimeout(runLLMAgent, 100);
+            }
+            else if (opponentMode === 'hermes') {
+                isProcessingMove = true;
+                ui.setBoardLocked(true);
+                ui.setLoading(true);
+                ui.setHermesChatThinking(true);
+                setTimeout(runHermesAgent, 100);
             }
         }
     }
@@ -411,6 +487,37 @@ document.addEventListener('DOMContentLoaded', () => {
         handleTurnSwitch();
     }
 
+    async function runHermesAgent() {
+        if (game.gameOver) return;
+        const move = await hermesAI.getBestMove(game);
+        if (move) {
+            // The client validated the move against the live legal-move list,
+            // movePiece() performs the authoritative server/game validation again.
+            const success = game.movePiece(move.fromRow, move.fromCol, move.toRow, move.toCol, 'q');
+            if (success) {
+                triggerSound();
+            } else {
+                ui.updateHermesStatus('Error: rejected illegal agent move');
+                runBasicCPU();
+            }
+        } else {
+            // Keep the specific failure reason (timeout, login, connection...)
+            // that getBestMove already reported — just append the consequence.
+            const lastStatus = ui.hermesStatus ? ui.hermesStatus.innerText : '';
+            if (!lastStatus.startsWith('Error:')) {
+                ui.updateHermesStatus('Error: no move from Hermes — CPU took over this turn');
+            } else {
+                ui.updateHermesStatus(lastStatus + ' — CPU took over this turn');
+            }
+            runBasicCPU();
+        }
+        ui.setBoardLocked(false);
+        ui.setLoading(false);
+        ui.setHermesChatThinking(false);
+        isProcessingMove = false;
+        handleTurnSwitch();
+    }
+
     function updateAll() {
         ui.updateTimers(clock, isGameStarted, game.gameOver, game.turn);
         ui.updateStatus(game);
@@ -420,6 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- STARTUP ---
     storage.loadSettings(ui);
     opponentMode = ui.getOpponentMode();
+    applyTimeControl();
     ui.createBoard(game, selectedSquare, onSquareClick);
 
     // UI Update Loop

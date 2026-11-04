@@ -44,6 +44,13 @@ A feature-rich, containerized, and modular Chess application built with Node.js,
     *   Play against **Ollama** (local), **OpenAI**, or any OpenAI-compatible endpoint.
     *   **Robustness:** Includes logic to validate LLM moves and auto-retry if the AI suggests an illegal move.
     *   **Fallback:** Automatically switches to Local CPU if the API becomes unreachable.
+3.  **Hermes Agent (full agent via the Hermes Gateway):**
+    *   Play against [Hermes](https://hermes-agent.nousresearch.com) — a self-hosted, full AI **agent** (not a raw model call): every move is a complete agent turn with the harness's tools, context and persistent memory in a dedicated session, so it remembers past games and adapts to your playing style over time.
+    *   **Zero-setup:** just paste your gateway URL (e.g. `http://192.168.1.10:9119`) into the UI — Open Chess registers it with its own server automatically and remembers it.
+    *   **Protocol:** Native TUI Gateway JSON-RPC over WebSocket (`hermes serve`) — no OpenAI-compat shim.
+    *   **Memory:** Games are reported back as PGN at game end; the agent stores and reflects on them with its own memory. Reset anytime via *"Reset agent memory"*.
+    *   **Chat:** An in-game chat panel — the agent comments on moves, and you can talk to it about the game (analysis, banter) while you play.
+    *   **Robustness:** Same protections as the LLM agent — legal-move validation, automatic retry on illegal answers, per-move timeout with agent-turn interruption, and CPU fallback. Incoming tool-approval/clarify interrupts are auto-declined so a turn never stalls on a dialog.
 
 ### 🌐 Multiplayer (P2P)
 *   **Real-Time Sockets:** Built on `socket.io` for instant move transmission.
@@ -98,6 +105,31 @@ The application will launch at `http://localhost:3000`.
 3.  **Model:** `gpt-3.5-turbo` or `gpt-4`.
 4.  **Key:** Enter your Bearer Token (`sk-...`).
 
+### Playing against a self-hosted Hermes Agent
+Play against a full [Hermes](https://hermes-agent.nousresearch.com) agent (tools, context, memory) instead of a raw model. Requires a machine running the Hermes Gateway (`hermes serve`) on your LAN/VPN.
+
+1.  **Run the gateway** (on any trusted machine):
+    ```bash
+    # one-time: choose dashboard credentials
+    cat >> ~/.hermes/.env <<'EOF'
+    HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+    HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=choose-a-strong-password
+    HERMES_DASHBOARD_BASIC_AUTH_SECRET=$(openssl rand -base64 32)
+    EOF
+
+    hermes serve --host 0.0.0.0 --port 9119
+    ```
+
+2.  **Start Open Chess:** `npm start`. That's it — no env vars, no config files.
+
+3.  **In the game:** select **Hermes Agent**, paste your gateway URL (e.g. `http://192.168.1.10:9119`), enter your gateway username/password (stored in your browser's LocalStorage only — the chess server never sees them), and press *Start Game*. Open Chess registers the URL with its own server and persists it automatically.
+
+**Why the URL goes through this server:** the gateway only trusts same-origin browser clients (CORS + WebSocket origin gate by design), so the chess server ships a credential-free passthrough under `/hermes-gateway` that the client uses automatically. For security it only accepts gateway URLs on **private/loopback** hosts — it is not a general internet proxy.
+
+**Headless/Docker pre-configuration (optional):** skip the UI step by setting `HERMES_GATEWAY_URL=http://<gateway-host>:9119` (env var) or providing `hermes.config.json` (copy `hermes.config.example.json`). With the env var set, the URL is locked; otherwise entering a URL in the UI overwrites `hermes.config.json` automatically.
+
+> 🔒 **Privacy:** your credentials are sent only to the gateway (through the same-origin proxy). The proxy is a dumb transport — no secrets, no AI logic, no game state. Keep both services on a trusted network; the gateway's own login protects it.
+
 ---
 
 ## 📂 Project Structure
@@ -109,6 +141,8 @@ The application will launch at `http://localhost:3000`.
 *   **`js/network.js`**: Socket.io client wrapper for multiplayer.
 *   **`js/opponent.js`**: Local Minimax AI logic.
 *   **`js/llm-player.js`**: Integration layer for communicating with LLM APIs.
+*   **`js/hermes-player.js`**: Browser client for a self-hosted Hermes agent (Gateway JSON-RPC over WebSocket).
+*   **`hermes-gateway-proxy.js`**: Optional same-origin passthrough to the Hermes Gateway; registers and persists the gateway URL entered in the UI.
 *   **`js/storage.js`**: Handles saving/loading settings and sessions to `localStorage`.
 *   **`server.js`**: (Assuming existence) Node.js/Socket.io backend.
 
@@ -118,10 +152,12 @@ The application will launch at `http://localhost:3000`.
 
 | Setting | Location | Description |
 | :--- | :--- | :--- |
-| **Opponent Mode** | Sidebar | Switch between Local (Hotseat), CPU, LLM, or Online. |
+| **Opponent Mode** | Sidebar | Switch between Local (Hotseat), CPU, LLM, Hermes Agent, or Online. |
 | **CPU Level** | Sidebar | Adjust depth of the Minimax algorithm. |
 | **Board Flip** | Sidebar | Rotates board 180 degrees. |
 | **Copy FEN** | Sidebar | Copies current board state to clipboard. |
+| **HERMES_GATEWAY_URL** | Server env var (optional) | Pre-configures the gateway for headless/Docker setups; normally you just enter the URL in the UI. |
+| **Time Control** | Sidebar | No limit (relaxed), 5/10/15/30 minutes, or a custom length in minutes. |
 
 ---
 
